@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dolmetscher</title>
+<meta name="theme-color" content="#0E1116">
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20512%20512%22%3E%3Crect%20width%3D%22512%22%20height%3D%22512%22%20rx%3D%22110%22%20fill%3D%22%230E1116%22%2F%3E%3Cpath%20d%3D%22M118%20150h132v44h-44v168h-44V194h-44z%22%20fill%3D%22%23F08C2E%22%2F%3E%3Cpath%20d%3D%22M286%20150h46l62%20212h-46l-12-44h-54l-12%2044h-46zm23%2062-18%2066h36z%22%20fill%3D%22%2335B8C9%22%2F%3E%3C%2Fsvg%3E">
+<link rel="manifest" href="data:application/manifest+json,%7B%22name%22%3A%20%22Dolmetscher%22%2C%20%22short_name%22%3A%20%22Dolmetscher%22%2C%20%22start_url%22%3A%20%22.%22%2C%20%22display%22%3A%20%22standalone%22%2C%20%22background_color%22%3A%20%22%230E1116%22%2C%20%22theme_color%22%3A%20%22%230E1116%22%2C%20%22lang%22%3A%20%22ru%22%2C%20%22icons%22%3A%20%5B%7B%22src%22%3A%20%22data%3Aimage%2Fsvg%2Bxml%2C%253Csvg%2520xmlns%253D%2522http%253A%252F%252Fwww.w3.org%252F2000%252Fsvg%2522%2520viewBox%253D%25220%25200%2520512%2520512%2522%253E%253Crect%2520width%253D%2522512%2522%2520height%253D%2522512%2522%2520rx%253D%2522110%2522%2520fill%253D%2522%25230E1116%2522%252F%253E%253Cpath%2520d%253D%2522M118%2520150h132v44h-44v168h-44V194h-44z%2522%2520fill%253D%2522%2523F08C2E%2522%252F%253E%253Cpath%2520d%253D%2522M286%2520150h46l62%2520212h-46l-12-44h-54l-12%252044h-46zm23%252062-18%252066h36z%2522%2520fill%253D%2522%252335B8C9%2522%252F%253E%253C%252Fsvg%253E%22%2C%20%22sizes%22%3A%20%22any%22%2C%20%22type%22%3A%20%22image%2Fsvg%2Bxml%22%2C%20%22purpose%22%3A%20%22any%22%7D%5D%7D">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: fixed phone app — status bar on top, giant translation stage in the middle, two mic buttons pinned to the bottom */
+:root{
+  --bg:#0E1116; --panel:#171C24; --line:#28313D; --fg:#EEF2F7; --muted:#8C9AAB;
+  --me:#F08C2E; --them:#35B8C9; --ok:#4ED38A; --err:#FF6B5E;
+  --display:"Archivo",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.4;
+  -webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+button{font-family:inherit;cursor:pointer}
+:focus-visible{outline:3px solid var(--me);outline-offset:2px}
+
+#app{display:flex;flex-direction:column;height:100%;
+  padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
+
+/* top bar */
+.bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);flex:none}
+.brand{font-family:var(--display);font-weight:800;font-size:15px;letter-spacing:.04em;text-transform:uppercase;margin-right:auto}
+.brand i{color:var(--me);font-style:normal}
+.tb{background:none;border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:7px 10px;font-size:13px;font-weight:500}
+.tb[aria-pressed="true"]{border-color:var(--ok);color:var(--ok)}
+
+/* situation chips */
+.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 14px;flex:none;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:none;background:var(--panel);border:1px solid var(--line);color:var(--muted);
+  border-radius:999px;padding:6px 13px;font-size:14px;font-weight:500;white-space:nowrap}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+
+/* stage */
+.stage{flex:1;min-height:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
+.who{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none}
+.live .dot{animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+@media (prefers-reduced-motion:reduce){.live .dot{animation:none}}
+.heard{font-size:17px;color:var(--muted);min-height:1.4em;word-break:break-word}
+.heard .interim{opacity:.55}
+.big{font-family:var(--display);font-weight:600;font-size:clamp(28px,7.5vw,46px);line-height:1.2;
+  word-break:break-word;min-height:1.2em;margin:0}
+.big.me{color:var(--me)} .big.them{color:var(--them)}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.acts button{background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:10px;
+  padding:9px 13px;font-size:14px;font-weight:500}
+.note{font-size:14px;color:var(--err);min-height:0}
+.hist{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:9px;margin-top:4px}
+.hist h2{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:600}
+.row{border-left:3px solid var(--line);padding-left:10px}
+.row.me{border-color:var(--me)} .row.them{border-color:var(--them)}
+.row .a{font-size:15px}
+.row .b{font-size:14px;color:var(--muted)}
+
+/* mic buttons */
+.mics{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 14px 14px;border-top:1px solid var(--line)}
+.mic{border:0;border-radius:16px;padding:18px 10px;color:#0E1116;font-family:var(--display);
+  font-weight:800;font-size:16px;letter-spacing:.02em;display:flex;flex-direction:column;align-items:center;gap:5px;
+  transition:transform .08s,filter .15s}
+.mic small{font-family:var(--body);font-weight:500;font-size:12px;letter-spacing:0;opacity:.75}
+.mic.m{background:var(--me)} .mic.t{background:var(--them)}
+.mic:active{transform:scale(.97)}
+.mic[aria-pressed="true"]{filter:brightness(1.25);box-shadow:0 0 0 3px var(--fg) inset}
+.mic:disabled{opacity:.4}
+
+/* setup / settings sheet */
+.sheet{position:fixed;inset:0;background:var(--bg);z-index:20;overflow-y:auto;
+  padding:calc(20px + env(safe-area-inset-top,0px)) 18px calc(28px + env(safe-area-inset-bottom,0px))}
+.sheet[hidden]{display:none}
+.sheet .inner{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+.sheet h1{font-family:var(--display);font-weight:800;font-size:22px;margin:0}
+.sheet h3{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:6px 0 -8px;font-weight:600}
+.sheet p{margin:0;font-size:15px;color:var(--muted)}
+.sheet ol{margin:0;padding-left:20px;font-size:15px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+.sheet a{color:var(--them)}
+input[type=password],input[type=text],textarea,select{width:100%;background:var(--panel);border:1px solid var(--line);
+  color:var(--fg);border-radius:11px;padding:13px;font:400 16px var(--body)}
+textarea{min-height:170px;resize:vertical;line-height:1.45}
+.save{background:var(--ok);color:#06240F;border:0;border-radius:12px;padding:15px;font:800 17px var(--display)}
+.ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:12px;padding:13px;font:500 15px var(--body)}
+.warn{background:#2A1C14;border:1px solid #4A2F1E;border-radius:11px;padding:12px;font-size:14px;color:#F0C9A8}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div class="bar">
+    <div class="brand">Dolmet<i>scher</i></div>
+    <button class="tb" id="autoBtn" type="button" aria-pressed="false">Авто-разговор</button>
+    <button class="tb" id="setBtn" type="button" aria-label="Настройки">⚙</button>
+  </div>
+
+  <div class="chips" id="chips" role="group" aria-label="Ситуация"></div>
+
+  <div class="stage">
+    <div class="who" id="who"><span class="dot"></span><span id="whoTxt">Готов</span></div>
+    <div class="heard" id="heard">Нажмите большую кнопку снизу и говорите.</div>
+    <p class="big" id="big"></p>
+    <div class="acts">
+      <button type="button" id="speakBtn">🔊 Повторить вслух</button>
+      <button type="button" id="copyBtn">Копировать</button>
+      <button type="button" id="clearBtn">Новый разговор</button>
+    </div>
+    <div class="note" id="note"></div>
+
+    <div class="hist" id="histBox" hidden>
+      <h2>Разговор</h2>
+      <div id="hist"></div>
+    </div>
+  </div>
+
+  <div class="mics">
+    <button class="mic m" id="micRu" type="button" aria-pressed="false">🎤 Я<small>по-русски</small></button>
+    <button class="mic t" id="micDe" type="button" aria-pressed="false">🎤 Er/Sie<small>auf Deutsch</small></button>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="inner">
+    <h1>Настройки</h1>
+
+    <h3>Ключ Claude API</h3>
+    <input type="password" id="key" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
+    <p>Ключ хранится только в этом браузере и уходит напрямую в Anthropic. Получить: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> → Create Key. Там же поставьте лимит расходов.</p>
+
+    <h3>Модель</h3>
+    <select id="model">
+      <option value="claude-haiku-4-5-20251001">Быстрая (Haiku) — для разговора</option>
+      <option value="claude-sonnet-5-5">Точная (Sonnet) — для писем и документов</option>
+    </select>
+
+    <h3>Обо мне</h3>
+    <textarea id="profile" placeholder="Кто вы, семья, с кем общаетесь, имена людей..."></textarea>
+    <p>Переводчик читает это перед каждым переводом: правильно пишет имена и подбирает тон.</p>
+
+    <h3>Голос</h3>
+    <label style="display:flex;gap:10px;align-items:center;font-size:15px">
+      <input type="checkbox" id="tts" style="width:22px;height:22px;accent-color:var(--ok)"> Произносить перевод вслух
+    </label>
+
+    <div class="warn">Не открывайте эту страницу на чужом телефоне: ключ останется в его браузере.</div>
+
+    <button class="save" id="saveBtn" type="button">Сохранить</button>
+    <button class="ghost" id="forgetBtn" type="button">Удалить ключ из этого браузера</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+var $ = function(id){ return document.getElementById(id); };
+
+/* ---------- состояние ---------- */
+var SIT = [["Alltag","Повседневное"],["Arzt","Врач"],["Schule","Школа"],["Fußball","Футбол"],
+           ["Jobcenter","Jobcenter"],["Behörde","Ведомство"],["Wohnung","Жильё"],["Einkauf","Магазин"]];
+var DEFAULT_PROFILE =
+"Я живу в Германии, немецкий только учу.\n"+
+"Общаюсь: школа и учителя, футбольный тренер, Jobcenter, Ausländerbehörde, врачи, страховая, арендодатель.\n"+
+"Стиль: вежливо на Sie, просто и коротко, без канцелярита. Если со мной на du — тоже на du.\n"+
+"Имена, которые часто встречаются: (допишите сюда имена детей, врача, тренера, учителей)";
+
+var S = {
+  key:  get("key",""),
+  model:get("model","claude-haiku-4-5-20251001"),
+  prof: get("prof",DEFAULT_PROFILE),
+  tts:  get("tts","1")==="1",
+  sit:  get("sit","Alltag"),
+  auto: false
+};
+var turns = [];          /* {dir, src, out} */
+var listening = null;    /* 'ru' | 'de' | null */
+var busy = false;
+var rec = null, recActive = false, wantLang = null, finalText = "";
+
+function get(k,d){ try{ var v=localStorage.getItem("dlm."+k); return v===null?d:v; }catch(e){ return d; } }
+function set(k,v){ try{ localStorage.setItem("dlm."+k,v); }catch(e){} }
+
+/* ---------- ситуации ---------- */
+SIT.forEach(function(p){
+  var b=document.createElement("button");
+  b.type="button"; b.className="chip"; b.textContent=p[1]; b.dataset.k=p[0];
+  b.setAttribute("aria-pressed", String(p[0]===S.sit));
+  b.onclick=function(){
+    S.sit=p[0]; set("sit",p[0]);
+    Array.prototype.forEach.call($("chips").children,function(c){
+      c.setAttribute("aria-pressed", String(c.dataset.k===p[0]));
+    });
+  };
+  $("chips").appendChild(b);
+});
+
+/* ---------- экран ---------- */
+function status(txt, live){
+  $("whoTxt").textContent = txt;
+  $("who").classList.toggle("live", !!live);
+}
+function note(t){ $("note").textContent = t || ""; }
+function showBig(text, dir){
+  var el=$("big");
+  el.textContent = text;
+  el.className = "big " + (dir==="ru-de" ? "me" : "them");
+}
+function renderHist(){
+  var box=$("hist");
+  $("histBox").hidden = turns.length===0;
+  box.innerHTML="";
+  turns.slice().reverse().forEach(function(t){
+    var d=document.createElement("div");
+    d.className = "row " + (t.dir==="ru-de"?"me":"them");
+    var a=document.createElement("div"); a.className="a"; a.textContent=t.out;
+    var b=document.createElement("div"); b.className="b"; b.textContent=t.src;
+    d.appendChild(a); d.appendChild(b); box.appendChild(d);
+  });
+}
+
+/* ---------- озвучка ---------- */
+var voices=[];
+function loadVoices(){ try{ voices=speechSynthesis.getVoices()||[]; }catch(e){ voices=[]; } }
+if("speechSynthesis" in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+
+function speak(text, lang, done){
+  if(!S.tts || !("speechSynthesis" in window) || !text){ if(done) done(); return; }
+  try{
+    speechSynthesis.cancel();
+    var u=new SpeechSynthesisUtterance(text);
+    u.lang=lang; u.rate=0.98;
+    var v=null, i;
+    for(i=0;i<voices.length;i++){
+      if(voices[i].lang && voices[i].lang.toLowerCase().replace("_","-").indexOf(lang.slice(0,2))===0){ v=voices[i]; break; }
+    }
+    if(v) u.voice=v;
+    var fired=false;
+    u.onend=function(){ if(!fired){ fired=true; if(done) done(); } };
+    u.onerror=function(){ if(!fired){ fired=true; if(done) done(); } };
+    speechSynthesis.speak(u);
+    setTimeout(function(){ if(!fired){ fired=true; if(done) done(); } }, Math.min(12000, 1800+text.length*90));
+  }catch(e){ if(done) done(); }
+}
+
+/* ---------- распознавание речи ---------- */
+var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+function startListening(lang){
+  if(!SR){ note("Этот браузер не умеет слушать речь. Откройте страницу в Chrome."); return; }
+  if(busy) return;
+  stopListening();
+  try{ speechSynthesis.cancel(); }catch(e){}
+
+  wantLang = lang;
+  finalText = "";
+  rec = new SR();
+  rec.lang = (lang==="ru" ? "ru-RU" : "de-DE");
+  rec.interimResults = true;
+  rec.continuous = false;
+  rec.maxAlternatives = 1;
+
+  rec.onstart = function(){
+    recActive = true;
+    listening = lang;
+    setMicState();
+    status(lang==="ru" ? "Слушаю вас" : "Höre zu", true);
+    $("heard").textContent = "";
+    note("");
+  };
+  rec.onresult = function(e){
+    var fin="", itm="";
+    for(var i=e.resultIndex;i<e.results.length;i++){
+      var r=e.results[i];
+      if(r.isFinal) fin += r[0].transcript; else itm += r[0].transcript;
+    }
+    if(fin) finalText += fin;
+    $("heard").innerHTML="";
+    $("heard").appendChild(document.createTextNode(finalText));
+    if(itm){
+      var s=document.createElement("span"); s.className="interim"; s.textContent=" "+itm;
+      $("heard").appendChild(s);
+    }
+  };
+  rec.onerror = function(e){
+    recActive=false;
+    var m={
+      "not-allowed":"Доступ к микрофону запрещён. Нажмите 🔒 в адресной строке Chrome и разрешите «Микрофон».",
+      "service-not-allowed":"Доступ к микрофону запрещён в настройках браузера.",
+      "no-speech":"",
+      "aborted":"",
+      "audio-capture":"Микрофон не найден.",
+      "network":"Нет интернета для распознавания речи."
+    };
+    var t = m.hasOwnProperty(e.error) ? m[e.error] : ("Ошибка распознавания: "+e.error);
+    if(t) note(t);
+  };
+  rec.onend = function(){
+    recActive=false; listening=null; setMicState();
+    var text = finalText.trim();
+    if(text){ translate(text, wantLang); }
+    else { status("Готов"); }
+  };
+
+  try{ rec.start(); }
+  catch(e){ note("Не удалось включить микрофон. Попробуйте ещё раз."); }
+}
+
+function stopListening(){
+  if(rec && recActive){ try{ rec.stop(); }catch(e){} }
+  recActive=false; listening=null; setMicState();
+}
+
+function setMicState(){
+  $("micRu").setAttribute("aria-pressed", String(listening==="ru"));
+  $("micDe").setAttribute("aria-pressed", String(listening==="de"));
+  $("micRu").disabled = busy;
+  $("micDe").disabled = busy;
+}
+
+/* ---------- перевод ---------- */
+function buildSystem(dir){
+  var sit = "";
+  for(var i=0;i<SIT.length;i++){ if(SIT[i][0]===S.sit) sit=SIT[i][0]; }
+  var hist = turns.slice(-6).map(function(t){
+    return (t.dir==="ru-de" ? "Я: " : "Собеседник: ") + t.src + " → " + t.out;
+  }).join("\n") || "(начало)";
+
+  var task = (dir==="ru-de")
+    ? "Переведи МОЮ фразу на немецкий. Я скажу её вслух собеседнику.\n"+
+      "- Разговорный вежливый немецкий, как сказал бы местный. Короткие простые предложения.\n"+
+      "- Обращение Sie, если собеседник сам не перешёл на du. Herr/Frau только с фамилией; если я называю человека по имени — просто «Hallo Sven».\n"+
+      "- Смысл, цифры, время, даты, имена — точно как у меня. Ничего не добавляй от себя.\n"+
+      "- Текст пришёл из распознавания речи: молча исправь ошибки распознавания и пунктуацию."
+    : "Переведи фразу СОБЕСЕДНИКА на русский.\n"+
+      "- Точно и близко к оригиналу, простым русским, без смягчений.\n"+
+      "- Цифры, время, даты, суммы, сроки — без изменений.\n"+
+      "- Важный немецкий термин оставь в скобках один раз: Termin, Bescheid, Antrag, Frist, Unterlagen, Überweisung, Krankmeldung, Aufenthaltstitel, Elternabend и т.п.\n"+
+      "- Текст из распознавания речи: если слово распознано криво, угадай по смыслу разговора; если смысл неясен, начни перевод с «(?)».";
+
+  return "Ты — устный переводчик русский⇄немецкий. Говорящий сейчас в ситуации: "+sit+".\n\n"+
+         "О пользователе:\n"+S.prof+"\n\n"+
+         "Разговор до этого:\n"+hist+"\n\n"+
+         task+"\n\nВыведи только перевод — без кавычек, пояснений и вариантов.";
+}
+
+function translate(text, lang){
+  if(!S.key){ note("Сначала вставьте ключ API в настройках (⚙)."); openSheet(); return; }
+  var dir = (lang==="ru") ? "ru-de" : "de-ru";
+  busy = true; setMicState();
+  status("Перевожу…", true);
+  showBig("…", dir);
+
+  fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{
+      "content-type":"application/json",
+      "x-api-key":S.key,
+      "anthropic-version":"2023-06-01",
+      "anthropic-dangerous-direct-browser-access":"true"
+    },
+    body:JSON.stringify({
+      model:S.model,
+      max_tokens:700,
+      system:buildSystem(dir),
+      messages:[{role:"user",content:text}]
+    })
+  })
+  .then(function(r){
+    return r.json().then(function(j){ return {ok:r.ok, status:r.status, body:j}; });
+  })
+  .then(function(res){
+    if(!res.ok){
+      var e = (res.body && res.body.error) || {};
+      var msg;
+      if(res.status===401) msg="Ключ API не принят. Проверьте его в настройках.";
+      else if(res.status===429) msg="Слишком часто. Подождите пару секунд.";
+      else if(res.status===400 && /credit|balance/i.test(e.message||"")) msg="На счёте Anthropic закончились средства.";
+      else msg = "Ошибка "+res.status+": "+(e.message||"не удалось перевести");
+      throw new Error(msg);
+    }
+    var parts = res.body.content || [];
+    var out = "";
+    for(var i=0;i<parts.length;i++){ if(parts[i].type==="text") out += parts[i].text; }
+    out = out.trim();
+    if(!out) throw new Error("Пустой ответ, попробуйте ещё раз.");
+
+    showBig(out, dir);
+    turns.push({dir:dir, src:text, out:out});
+    if(turns.length>24) turns.shift();
+    renderHist();
+    status("Готов");
+
+    var outLang = (dir==="ru-de") ? "de-DE" : "ru-RU";
+    busy=false; setMicState();
+    speak(out, outLang, function(){
+      if(S.auto){
+        var next = (dir==="ru-de") ? "de" : "ru";
+        setTimeout(function(){ if(S.auto && !busy) startListening(next); }, 250);
+      }
+    });
+  })
+  .catch(function(err){
+    busy=false; setMicState();
+    status("Готов");
+    showBig("", dir);
+    $("big").textContent="";
+    note(err.message && /Failed to fetch|NetworkError/i.test(err.message)
+      ? "Нет связи с Claude. Проверьте интернет."
+      : (err.message||"Не получилось перевести."));
+  });
+}
+
+/* ---------- кнопки ---------- */
+$("micRu").onclick = function(){ if(listening==="ru") stopListening(); else startListening("ru"); };
+$("micDe").onclick = function(){ if(listening==="de") stopListening(); else startListening("de"); };
+
+$("autoBtn").onclick = function(){
+  S.auto = !S.auto;
+  $("autoBtn").setAttribute("aria-pressed", String(S.auto));
+  note(S.auto ? "" : "");
+  if(!S.auto) stopListening();
+};
+
+$("speakBtn").onclick = function(){
+  var t=$("big").textContent;
+  if(!t) return;
+  var ru = (t.match(/[А-Яа-яЁё]/g)||[]).length > (t.match(/[A-Za-zÄÖÜäöüß]/g)||[]).length;
+  var wasTts = S.tts; S.tts = true;
+  speak(t, ru?"ru-RU":"de-DE", function(){ S.tts = wasTts; });
+};
+$("copyBtn").onclick = function(){
+  var t=$("big").textContent; if(!t) return;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){
+      $("copyBtn").textContent="Скопировано";
+      setTimeout(function(){ $("copyBtn").textContent="Копировать"; },1400);
+    }).catch(function(){ selectBig(); });
+  } else selectBig();
+};
+function selectBig(){
+  try{
+    var r=document.createRange(); r.selectNodeContents($("big"));
+    var s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
+  }catch(e){}
+}
+$("clearBtn").onclick = function(){
+  turns=[]; renderHist(); $("big").textContent=""; $("heard").textContent="Нажмите большую кнопку снизу и говорите.";
+  note(""); status("Готов");
+};
+
+/* ---------- настройки ---------- */
+function openSheet(){
+  $("key").value = S.key;
+  $("model").value = S.model;
+  $("profile").value = S.prof;
+  $("tts").checked = S.tts;
+  $("sheet").hidden = false;
+}
+$("setBtn").onclick = openSheet;
+$("saveBtn").onclick = function(){
+  S.key = $("key").value.trim();
+  S.model = $("model").value;
+  S.prof = $("profile").value;
+  S.tts = $("tts").checked;
+  set("key",S.key); set("model",S.model); set("prof",S.prof); set("tts",S.tts?"1":"0");
+  $("sheet").hidden = true;
+  note(S.key ? "" : "Без ключа API перевод не работает.");
+};
+$("forgetBtn").onclick = function(){
+  S.key=""; set("key",""); $("key").value="";
+  note("Ключ удалён из этого браузера.");
+};
+
+/* ---------- старт ---------- */
+renderHist();
+if(!SR) note("Этот браузер не умеет слушать речь. Откройте страницу в Chrome.");
+if(!S.key){ openSheet(); }
+window.addEventListener("beforeunload", function(){ try{ speechSynthesis.cancel(); }catch(e){} });
+})();
+</script>
+</body>
+</html>
