@@ -186,7 +186,7 @@ label.cb input{width:22px;height:22px;accent-color:var(--ok);flex:none}
     <label class="cb"><input type="checkbox" id="tts"> Произносить перевод вслух</label>
     <label class="cb"><input type="checkbox" id="beep"> Сигнал «говорите» перед записью</label>
     <label class="cb"><input type="checkbox" id="notice"> Предупреждать собеседника при старте</label>
-    <label class="cb"><input type="checkbox" id="longm"> Слушать длинные фразы (ждать паузу)</label>
+    <label class="cb"><input type="checkbox" id="longm"> Ждать паузу, а не обрывать на первой заминке</label>
     <h3>Пауза до конца фразы</h3>
     <select id="pause">
       <option value="1500">1,5 секунды — быстрый разговор</option>
@@ -207,7 +207,7 @@ label.cb input{width:22px;height:22px;accent-color:var(--ok);flex:none}
 "use strict";
 var $=function(i){return document.getElementById(i)};
 
-var VER="v9 · 30.10 18:30";
+var VER="v10 · 30.10 18:50";
 var SIT=[["Alltag","Повседневное"],["Arzt","Врач"],["Schule","Школа"],["Fußball","Футбол"],
          ["Jobcenter","Jobcenter"],["Behörde","Ведомство"],["Wohnung","Жильё"],["Einkauf","Магазин"]];
 var NOTICE_DE="Ich spreche nur wenig Deutsch. Ich benutze eine Übersetzer-App auf dem Handy. Sie übersetzt unser Gespräch live, es wird nichts aufgezeichnet. Ist das für Sie in Ordnung?";
@@ -235,6 +235,7 @@ var S={key:g("key",""),model:g("model","claude-haiku-4-5-20251001"),prof:g("prof
 
 var turns=[],loop=false,busy=false,empties=0,noticed=false,lastSrc="",lastLang="ru",gen=0,holding=false;
 var rec=null,recOn=false,curLang=null,finalTxt="",alts=[],pending=null,wake=null,silence=null;
+var buf=[],bufAlts=[],settle=null;
 
 /* ---------- отрисовка ---------- */
 function bubble(cls,main,orig){
@@ -385,13 +386,31 @@ function killRec(){
   rec=null;
 }
 function armSilence(ms){ clearSilence(); silence=setTimeout(function(){ try{rec&&rec.stop()}catch(e){} },ms); }
-function hardStop(){ clearSilence(); killRec(); recOn=false; holding=false; curLang=null; pending=null; showRec(false); marks(); }
+function hardStop(){ clearSilence(); clearSettle(); killRec(); recOn=false; holding=false;
+  curLang=null; pending=null; buf=[]; bufAlts=[]; showRec(false); marks(); }
 
-function listen(lang){
+function clearSettle(){ if(settle){clearTimeout(settle); settle=null;} }
+function armSettle(){ clearSettle(); settle=setTimeout(finishPhrase,S.pause); }
+
+/* Android обрывает запись на любой паузе. Поэтому фразу копим между
+   обрывами и переводим только когда вы молчите выбранное время. */
+function finishPhrase(){
+  clearSettle(); clearSilence();
+  var lang=curLang||"ru";
+  var txt=collapseW(buf).join(" ").trim();
+  var a=bufAlts.slice();
+  buf=[]; bufAlts=[]; empties=0;
+  holding=false; killRec(); recOn=false; showRec(false); pending=null; marks();
+  if(txt.length>1500) txt=txt.slice(0,1500);
+  if(txt) translate(txt,lang,a); else { render(); setState("Готов"); }
+}
+
+function listen(lang,cont){
   if(!SR){ err("Этот браузер не умеет слушать речь. Откройте страницу в Chrome."); return; }
   if(busy) return;
   killRec();
   recOn=false; holding=true; curLang=lang; finalTxt=""; alts=[];
+  if(!cont){ buf=[]; bufAlts=[]; empties=0; }
   rec=new SR();
   rec.lang=lang==="ru"?"ru-RU":"de-DE";
   rec.interimResults=true; rec.continuous=S.longm; rec.maxAlternatives=5;
@@ -400,25 +419,27 @@ function listen(lang){
     recOn=true; marks(); err("");
     setState(lang==="ru"?"Слушаю вас":"Höre zu","live");
     showRec(true,lang);
-    pending={side:lang==="ru"?"me":"them",text:""}; render();
+    var sofar=collapseW(buf).join(" ");
+    $("heard").textContent=sofar;
+    pending={side:lang==="ru"?"me":"them",text:sofar}; render();
     if(S.longm) armSilence(Math.max(15000,S.pause*3));
   };
+
   rec.onresult=function(e){
+    clearSettle();                       // человек говорит — отсчёт паузы отменяем
     var acc=[],itm=[],fins=[];
     for(var i=0;i<e.results.length;i++){
       var r=e.results[i]; if(!r||!r[0]) continue;
       var t=(r[0].transcript||"").trim(); if(!t) continue;
       if(r.isFinal){
         acc=mergeW(acc,t);
-        var a=[];
-        for(var k=0;k<r.length&&k<5;k++) if(r[k]&&r[k].transcript) a.push(r[k].transcript);
-        fins.push({t:t,a:a});
+        var al=[];
+        for(var k=0;k<r.length&&k<5;k++) if(r[k]&&r[k].transcript) al.push(r[k].transcript);
+        fins.push({t:t,a:al});
       } else itm=mergeW(itm,t);
     }
     acc=collapseW(acc);
     finalTxt=acc.join(" ");
-    // варианты берём у тех кусков, что не являются началом более длинного:
-    // так отсеиваются нарастающие дубли, но остаются настоящие части фразы
     var keep=[];
     for(var x=0;x<fins.length;x++){
       var pre=false, A=wds(fins[x].t);
@@ -430,12 +451,14 @@ function listen(lang){
       if(!pre) keep.push(fins[x].a);
     }
     alts=keep.slice(0,4);
-    var shown=collapseW(itm.length?mergeW(acc.slice(),itm.join(" ")):acc).join(" ");
+    var live=itm.length?mergeW(acc.slice(),itm.join(" ")):acc;
+    var shown=collapseW(mergeW(buf.slice(),live.join(" "))).join(" ");
     if(shown.length>600) shown="…"+shown.slice(-600);
     $("heard").textContent=shown;
     if(pending){ pending.text=shown; render(); }
-    if(S.longm) armSilence(S.pause);
+    if(S.longm) armSilence(Math.max(8000,S.pause*3));
   };
+
   rec.onerror=function(e){
     recOn=false; clearSilence();
     var M={"not-allowed":"Микрофон запрещён. Нажмите 🔒 слева в адресной строке и разрешите «Микрофон».",
@@ -443,31 +466,41 @@ function listen(lang){
            "audio-capture":"Микрофон не найден.","network":"Нет интернета для распознавания речи.",
            "no-speech":"","aborted":""};
     var t=M.hasOwnProperty(e.error)?M[e.error]:("Ошибка распознавания: "+e.error);
-    if(t){ err(t); loop=false; holding=false; marks(); keepAwake(false); showRec(false); }
+    if(t){ err(t); loop=false; holding=false; clearSettle(); marks(); keepAwake(false); showRec(false); }
   };
+
   rec.onend=function(){
-    recOn=false; clearSilence(); showRec(false); marks();
-    if(curLang!==lang) return;              // запись отменили — ничего не переводим
-    var txt=finalTxt.trim();
-    if(txt.length>1500) txt=txt.slice(0,1500);
-    if(txt){ empties=0; holding=false; pending=null; translate(txt,curLang,alts.slice()); return; }
-    pending=null; render();
-    // молчание — не повод бросать: включаем микрофон заново и ждём
-    if(holding){
-      empties++;
-      if(empties>=25){ holding=false; loop=false; marks(); keepAwake(false); setState("Пауза. Нажмите кнопку"); return; }
-      setState(lang==="ru"?"Жду, говорите…":"Warte, sprechen Sie…","live");
-      setTimeout(function(){ if(holding) listen(lang); },200);
+    recOn=false; clearSilence(); marks();
+    if(curLang!==lang||!holding) return;      // запись отменили
+    var t=finalTxt.trim();
+    if(t){
+      buf=mergeW(buf,t);
+      if(alts.length) bufAlts=bufAlts.concat(alts);
+      empties=0;
+      if(!S.longm){ finishPhrase(); return; } // режим «переводить сразу»
+      armSettle();                            // ждём, вдруг человек продолжит
+      setTimeout(function(){ if(holding) listen(lang,true); },120);
       return;
     }
-    setState("Готов");
+    if(buf.length){                           // молчит после сказанного — досчитываем паузу
+      if(!settle) armSettle();
+      setTimeout(function(){ if(holding) listen(lang,true); },120);
+      return;
+    }
+    empties++;                                // ещё ничего не сказал — ждём
+    if(empties>=25){
+      holding=false; loop=false; clearSettle(); marks(); keepAwake(false);
+      showRec(false); setState("Пауза. Нажмите кнопку"); return;
+    }
+    setTimeout(function(){ if(holding) listen(lang,true); },200);
   };
-  beep(lang);
+
+  if(!cont) beep(lang);
   var mine=rec;
   setTimeout(function(){
-    if(rec!==mine||curLang!==lang) return;      // запись успели отменить
+    if(rec!==mine||curLang!==lang) return;
     try{ mine.start(); }catch(e){ err("Не удалось включить микрофон."); }
-  },S.beep?230:0);
+  },(!cont&&S.beep)?230:0);
 }
 
 /* ---------- перевод ---------- */
@@ -484,12 +517,15 @@ function sysPrompt(dir,hint){
   var hist=turns.filter(function(t){return t.dir!=="sys"}).slice(-6).map(function(t){
     return (t.dir==="ru-de"?"Я: ":"Собеседник: ")+t.src+" → "+t.out; }).join("\n")||"(начало)";
   var task = dir==="ru-de"
-   ? "Переведи МОЮ фразу на немецкий. Телефон произнесёт её вслух собеседнику.\n"+
+   ? "Переведи МОЮ речь на немецкий. Телефон произнесёт её вслух собеседнику.\n"+
+     "- ПЕРЕВОДИ ВСЁ ЦЕЛИКОМ: каждое предложение, от первого слова до последнего. Не сокращай, не пересказывай, не выбрасывай части. Длинная речь — длинный перевод.\n"+
      "- Разговорный вежливый немецкий, как сказал бы местный. Короткие простые предложения.\n"+
+     "- Речь живая, с «ну», «вот», повторами и обрывками: расставь предложения и знаки, лишние слова-паразиты опусти, но смысл сохрани весь.\n"+
      "- Sie, если собеседник сам не перешёл на du. Herr/Frau только с фамилией; по имени — просто «Hallo Sven».\n"+
      "- Смысл, цифры, время, даты, имена — точно как у меня. Ничего не добавляй.\n"+
      "- Текст из распознавания речи: молча исправь ошибки распознавания и пунктуацию."
-   : "Переведи фразу СОБЕСЕДНИКА на русский.\n"+
+   : "Переведи речь СОБЕСЕДНИКА на русский.\n"+
+     "- ПЕРЕВОДИ ВСЁ ЦЕЛИКОМ: каждое предложение. Не сокращай и не пересказывай.\n"+
      "- Точно и близко к оригиналу, простым русским, без смягчений.\n"+
      "- Цифры, время, даты, суммы, сроки — без изменений.\n"+
      "- Важный немецкий термин оставь в скобках один раз: Termin, Bescheid, Antrag, Frist, Unterlagen, Überweisung, Krankmeldung, Rezept, Aufenthaltstitel, Elternabend.\n"+
@@ -512,7 +548,7 @@ function translate(text,lang,altList){
     method:"POST",
     headers:{"content-type":"application/json","x-api-key":S.key,
              "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:S.model,max_tokens:700,
+    body:JSON.stringify({model:S.model,max_tokens:2000,
       system:sysPrompt(dir,altHint(altList)),messages:[{role:"user",content:text}]})
   })
   .then(function(r){ return r.json().then(function(j){return{ok:r.ok,st:r.status,b:j}}) })
@@ -586,11 +622,11 @@ $("autoBtn").onclick=function(){
     sayNow(NOTICE_DE,"de-DE",function(){ if(loop) listen("ru"); });
   } else listen("ru");
 };
-$("recStop").onclick=function(){ holding=false; clearSilence(); try{rec&&rec.stop()}catch(e){} };
+$("recStop").onclick=function(){ finishPhrase(); };
 $("btnMe").onclick=function(){ loop=false; marks(); keepAwake(false);
-  if(recOn&&curLang==="ru"){ holding=false; try{rec.stop()}catch(e){} } else { empties=0; listen("ru"); } };
+  if(recOn&&curLang==="ru") finishPhrase(); else { empties=0; listen("ru"); } };
 $("btnThem").onclick=function(){ loop=false; marks(); keepAwake(false);
-  if(recOn&&curLang==="de"){ holding=false; try{rec.stop()}catch(e){} } else { empties=0; listen("de"); } };
+  if(recOn&&curLang==="de") finishPhrase(); else { empties=0; listen("de"); } };
 $("sendBtn").onclick=function(){
   var t=$("typed").value.trim(); if(!t) return;
   $("typed").value=""; loop=false; marks();
