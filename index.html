@@ -184,6 +184,18 @@ label.cb input{width:22px;height:22px;accent-color:var(--ok);flex:none}
     <p>Переводчик читает это перед каждой фразой: правильно пишет имена и держит нужный тон.</p>
     <h3>Поведение</h3>
     <label class="cb"><input type="checkbox" id="tts"> Произносить перевод вслух</label>
+    <h3>Голос немецкий</h3>
+    <div style="display:flex;gap:8px"><select id="voiceDe"></select><button class="ghost" id="testDe" type="button" style="flex:none;padding:13px 16px">▶</button></div>
+    <h3>Голос русский</h3>
+    <div style="display:flex;gap:8px"><select id="voiceRu"></select><button class="ghost" id="testRu" type="button" style="flex:none;padding:13px 16px">▶</button></div>
+    <h3>Скорость речи</h3>
+    <select id="rate">
+      <option value="0.85">Медленно</option>
+      <option value="0.95">Чуть медленнее</option>
+      <option value="1">Обычно</option>
+      <option value="1.1">Быстрее</option>
+    </select>
+    <p id="voiceHint">Если голоса звучат роботом, поставьте в Android: Настройки → Общие → Синтез речи → движок <b>Google</b>, затем скачайте немецкий голос. Там же бывают улучшенные варианты.</p>
     <label class="cb"><input type="checkbox" id="beep"> Сигнал «говорите» перед записью</label>
     <label class="cb"><input type="checkbox" id="notice"> Предупреждать собеседника при старте</label>
     <label class="cb"><input type="checkbox" id="longm"> Ждать паузу, а не обрывать на первой заминке</label>
@@ -207,7 +219,7 @@ label.cb input{width:22px;height:22px;accent-color:var(--ok);flex:none}
 "use strict";
 var $=function(i){return document.getElementById(i)};
 
-var VER="v10 · 30.10 18:50";
+var VER="v11 · 30.10 19:40";
 var SIT=[["Alltag","Повседневное"],["Arzt","Врач"],["Schule","Школа"],["Fußball","Футбол"],
          ["Jobcenter","Jobcenter"],["Behörde","Ведомство"],["Wohnung","Жильё"],["Einkauf","Магазин"]];
 var NOTICE_DE="Ich spreche nur wenig Deutsch. Ich benutze eine Übersetzer-App auf dem Handy. Sie übersetzt unser Gespräch live, es wird nichts aufgezeichnet. Ist das für Sie in Ordnung?";
@@ -231,7 +243,8 @@ function s_(k,v){try{localStorage.setItem("dlm."+k,v)}catch(e){}}
 var S={key:g("key",""),model:g("model","claude-haiku-4-5-20251001"),prof:g("prof",DEF_PROFILE),
   tts:g("tts","1")==="1",beep:g("beep","1")==="1",notice:g("notice","1")==="1",longm:g("longm","1")==="1",
   sit:g("sit","Alltag"),flip:g("flip","1")==="1",view:g("view","chat"),
-  pause:parseInt(g("pause","2500"),10)||2500};
+  pause:parseInt(g("pause","2500"),10)||2500,
+  vDe:g("vDe",""),vRu:g("vRu",""),rate:parseFloat(g("rate","0.95"))||0.95};
 
 var turns=[],loop=false,busy=false,empties=0,noticed=false,lastSrc="",lastLang="ru",gen=0,holding=false;
 var rec=null,recOn=false,curLang=null,finalTxt="",alts=[],pending=null,wake=null,silence=null;
@@ -308,21 +321,61 @@ function beep(lang){
   }catch(e){}
 }
 var voices=[];
-function loadVoices(){try{voices=speechSynthesis.getVoices()||[]}catch(e){voices=[]}}
-if("speechSynthesis" in window){loadVoices();speechSynthesis.onvoiceschanged=loadVoices;}
+function loadVoices(){
+  try{ voices=speechSynthesis.getVoices()||[] }catch(e){ voices=[] }
+  var sh=$("sheet"); if(sh&&!sh.hidden) fillVoices();
+}
+function forLang(code){
+  return voices.filter(function(v){
+    var L=(v.lang||"").toLowerCase().replace("_","-");
+    return L.indexOf(code)===0;
+  }).sort(function(a,b){ return rank(b)-rank(a); });
+}
+function rank(v){                      /* «живые» голоса обычно так и подписаны */
+  var n=((v.name||"")+" "+(v.voiceURI||"")).toLowerCase(), r=0;
+  if(/neural|wavenet|chirp|studio|natural|premium|enhanced/.test(n)) r+=10;
+  if(/google/.test(n)) r+=3;
+  if(v.localService===false) r+=2;     /* сетевые голоса чаще качественнее */
+  return r;
+}
+function pickVoice(code){
+  var list=forLang(code), want=code==="de"?S.vDe:S.vRu;
+  if(want){ for(var i=0;i<list.length;i++) if(list[i].voiceURI===want) return list[i]; }
+  return list[0]||null;
+}
+function fillVoices(){
+  [["voiceDe","de",S.vDe],["voiceRu","ru",S.vRu]].forEach(function(p){
+    var sel=$(p[0]); if(!sel) return;
+    var list=forLang(p[1]);
+    sel.innerHTML="";
+    if(!list.length){
+      var o=document.createElement("option");
+      o.value=""; o.textContent="голосов нет — установите в Android";
+      sel.appendChild(o); return;
+    }
+    var auto=document.createElement("option");
+    auto.value=""; auto.textContent="Лучший доступный ("+list[0].name+")";
+    sel.appendChild(auto);
+    list.forEach(function(v){
+      var o=document.createElement("option");
+      o.value=v.voiceURI;
+      o.textContent=v.name+(rank(v)>=10?" ★":"");
+      sel.appendChild(o);
+    });
+    sel.value=p[2]||"";
+  });
+}
+if("speechSynthesis" in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
 function speak(text,lang,done){
   if(!S.tts||!("speechSynthesis" in window)||!text){if(done)done();return;}
   try{
     speechSynthesis.cancel();
-    var u=new SpeechSynthesisUtterance(text); u.lang=lang; u.rate=0.98;
-    for(var i=0;i<voices.length;i++){
-      var L=(voices[i].lang||"").toLowerCase().replace("_","-");
-      if(L.indexOf(lang.slice(0,2))===0){u.voice=voices[i];break;}
-    }
+    var u=new SpeechSynthesisUtterance(text); u.lang=lang; u.rate=S.rate; u.pitch=1;
+    var pv=pickVoice(lang.slice(0,2)); if(pv) u.voice=pv;
     var f=false,fin=function(){if(!f){f=true;if(done)done();}};
     u.onend=fin; u.onerror=fin; speechSynthesis.speak(u);
     setTimeout(fin,Math.min(16000,2000+text.length*95));
-  }catch(e){if(done)done();}
+  }catch(e){ try{console.error("speak:",e&&e.message||e)}catch(_){} if(done)done(); }
 }
 function sayNow(t,l,d){var x=S.tts;S.tts=true;speak(t,l,function(){S.tts=x;if(d)d();});}
 
@@ -654,6 +707,15 @@ function openSheet(){
   $("key").value=S.key; $("model").value=S.model; $("profile").value=S.prof;
   $("tts").checked=S.tts; $("beep").checked=S.beep; $("notice").checked=S.notice; $("longm").checked=S.longm;
   $("pause").value=String(S.pause);
+  if(!$("pause").value){                       // сохранено нестандартное значение — берём ближайшее
+    var best=null,bd=1e9;
+    Array.prototype.forEach.call($("pause").options,function(o){
+      var d=Math.abs(parseInt(o.value,10)-S.pause); if(d<bd){bd=d;best=o.value;}
+    });
+    if(best) $("pause").value=best;
+  }
+  $("rate").value=String(S.rate);
+  fillVoices();
   $("sheet").hidden=false;
 }
 $("setBtn").onclick=function(){ loop=false; hardStop(); marks(); keepAwake(false); openSheet(); };
@@ -661,11 +723,29 @@ $("saveBtn").onclick=function(){
   S.key=$("key").value.trim(); S.model=$("model").value; S.prof=$("profile").value;
   S.tts=$("tts").checked; S.beep=$("beep").checked; S.notice=$("notice").checked; S.longm=$("longm").checked;
   S.pause=parseInt($("pause").value,10)||2500;
+  S.vDe=$("voiceDe").value; S.vRu=$("voiceRu").value;
+  S.rate=parseFloat($("rate").value)||0.95;
   s_("key",S.key); s_("model",S.model); s_("prof",S.prof);
   s_("tts",S.tts?"1":"0"); s_("beep",S.beep?"1":"0"); s_("notice",S.notice?"1":"0"); s_("longm",S.longm?"1":"0");
   s_("pause",String(S.pause));
+  s_("vDe",S.vDe); s_("vRu",S.vRu); s_("rate",String(S.rate));
   $("sheet").hidden=true; err(S.key?"":"Без ключа API перевод не работает.");
 };
+function tryVoice(code){
+  var uri=$(code==="de"?"voiceDe":"voiceRu").value;
+  var saved=code==="de"?S.vDe:S.vRu, savedRate=S.rate;
+  if(code==="de") S.vDe=uri; else S.vRu=uri;
+  S.rate=parseFloat($("rate").value)||0.95;
+  var t=code==="de" ? "Guten Tag. Mein Sohn hat Fußballtraining um siebzehn Uhr."
+                    : "Здравствуйте. У сына тренировка в пять часов.";
+  var was=S.tts; S.tts=true;
+  speak(t, code==="de"?"de-DE":"ru-RU", function(){
+    S.tts=was; S.rate=savedRate;
+    if(code==="de") S.vDe=saved; else S.vRu=saved;
+  });
+}
+$("testDe").onclick=function(){ tryVoice("de"); };
+$("testRu").onclick=function(){ tryVoice("ru"); };
 $("forgetBtn").onclick=function(){ S.key=""; s_("key",""); $("key").value=""; err("Ключ удалён."); };
 $("copyAll").onclick=function(){
   var t=turns.filter(function(x){return x.dir!=="sys"})
