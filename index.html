@@ -11,150 +11,154 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=Barlow:wght@400;500;600&display=swap">
 <style>
-/* Layout: fixed phone app — status bar on top, giant translation stage in the middle, two mic buttons pinned to the bottom */
+/* Layout: messenger-like flow of the dialogue by default; one tap flips to table mode — upper half rotated for the other person */
 :root{
   --bg:#0E1116; --panel:#171C24; --line:#28313D; --fg:#EEF2F7; --muted:#8C9AAB;
-  --me:#F08C2E; --them:#35B8C9; --ok:#4ED38A; --err:#FF6B5E;
+  --me:#F08C2E; --them:#35B8C9; --ok:#4ED38A; --err:#FF6B5E; --stop:#E8453C;
   --display:"Archivo",system-ui,sans-serif;
   --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
   color-scheme:dark;
 }
 *{box-sizing:border-box}
-html,body{height:100%;margin:0}
-body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.4;
-  -webkit-tap-highlight-color:transparent;overscroll-behavior:none}
-button{font-family:inherit;cursor:pointer}
-:focus-visible{outline:3px solid var(--me);outline-offset:2px}
+html,body{height:100%;margin:0;overflow:hidden}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:16px;line-height:1.35;
+  -webkit-tap-highlight-color:transparent;overscroll-behavior:none;user-select:none}
+button{font-family:inherit;cursor:pointer;color:inherit}
+:focus-visible{outline:3px solid var(--ok);outline-offset:2px}
+[hidden]{display:none!important}
+#app{display:flex;flex-direction:column;height:100%;padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
 
-#app{display:flex;flex-direction:column;height:100%;
-  padding:env(safe-area-inset-top,0px) 0 env(safe-area-inset-bottom,0px)}
-
-/* top bar */
-.bar{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);flex:none}
-.brand{font-family:var(--display);font-weight:800;font-size:15px;letter-spacing:.04em;text-transform:uppercase;margin-right:auto}
-.brand i{color:var(--me);font-style:normal}
-.tb{background:none;border:1px solid var(--line);color:var(--muted);border-radius:9px;padding:7px 10px;font-size:13px;font-weight:500}
+/* ---- top strip ---- */
+.strip{flex:none;display:flex;align-items:center;gap:7px;padding:8px 12px;
+  background:var(--panel);border-bottom:1px solid var(--line)}
+.state{flex:1;min-width:0;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none}
+.state.live .dot{background:var(--ok);animation:p 1.1s ease-in-out infinite}
+.state.wait .dot{background:var(--me);animation:p 1.1s ease-in-out infinite}
+@keyframes p{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.65)}}
+@media (prefers-reduced-motion:reduce){.state .dot{animation:none}}
+.state b{color:var(--fg);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tb{background:none;border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:13px;color:var(--muted)}
 .tb[aria-pressed="true"]{border-color:var(--ok);color:var(--ok)}
 
-/* situation chips */
-.chips{display:flex;gap:6px;overflow-x:auto;padding:8px 14px;flex:none;scrollbar-width:none}
-.chips::-webkit-scrollbar{display:none}
-.chip{flex:none;background:var(--panel);border:1px solid var(--line);color:var(--muted);
-  border-radius:999px;padding:6px 13px;font-size:14px;font-weight:500;white-space:nowrap}
-.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+/* ---- chat view ---- */
+#chat{flex:1;min-height:0;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+.bub{max-width:88%;border-radius:16px;padding:11px 14px;user-select:text}
+.bub .t{font-size:21px;line-height:1.25;font-weight:500;word-break:break-word}
+.bub .o{font-size:13px;color:var(--muted);margin-top:4px;word-break:break-word}
+.bub.me{align-self:flex-end;background:#2A1F12;border:1px solid #4A3317;border-bottom-right-radius:5px}
+.bub.me .t{color:var(--me)}
+.bub.them{align-self:flex-start;background:#102027;border:1px solid #1C3C46;border-bottom-left-radius:5px}
+.bub.them .t{color:var(--them)}
+.bub.sys{align-self:center;background:none;border:1px dashed var(--line);max-width:100%;text-align:center}
+.bub.sys .t{font-size:13px;color:var(--muted);font-weight:400}
+.bub.pend{opacity:.6}
+.bub.pend .t{font-style:italic}
+.hint{color:var(--muted);font-size:14px;text-align:center;margin:auto;max-width:300px;line-height:1.5}
 
-/* stage */
-.stage{flex:1;min-height:0;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px}
-.who{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);flex:none}
-.live .dot{animation:pulse 1.1s ease-in-out infinite}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
-@media (prefers-reduced-motion:reduce){.live .dot{animation:none}}
-.heard{font-size:17px;color:var(--muted);min-height:1.4em;word-break:break-word}
-.heard .interim{opacity:.55}
-.big{font-family:var(--display);font-weight:600;font-size:clamp(28px,7.5vw,46px);line-height:1.2;
-  word-break:break-word;min-height:1.2em;margin:0}
-.big.me{color:var(--me)} .big.them{color:var(--them)}
-.acts{display:flex;gap:8px;flex-wrap:wrap}
-.acts button{background:var(--panel);border:1px solid var(--line);color:var(--fg);border-radius:10px;
-  padding:9px 13px;font-size:14px;font-weight:500}
-.note{font-size:14px;color:var(--err);min-height:0}
-.hist{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:9px;margin-top:4px}
-.hist h2{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0;font-weight:600}
-.row{border-left:3px solid var(--line);padding-left:10px}
-.row.me{border-color:var(--me)} .row.them{border-color:var(--them)}
-.row .a{font-size:15px}
-.row .b{font-size:14px;color:var(--muted)}
+/* ---- table view ---- */
+#table{flex:1;min-height:0;display:flex;flex-direction:column}
+.pane{flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:8px;padding:12px 16px;overflow-y:auto}
+.pane.flip{transform:rotate(180deg)}
+.pane .tag{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);flex:none}
+.pane .txt{font-family:var(--display);font-weight:600;font-size:clamp(22px,6.2vw,40px);line-height:1.18;word-break:break-word;user-select:text}
+#paneThem{background:#131A22;border-bottom:1px solid var(--line);flex:1}
+#paneThem .txt{color:var(--them)} #paneMe .txt{color:var(--me)}
 
-/* mic buttons */
-.mics{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px 14px 14px;border-top:1px solid var(--line)}
-.mic{border:0;border-radius:16px;padding:18px 10px;color:#0E1116;font-family:var(--display);
-  font-weight:800;font-size:16px;letter-spacing:.02em;display:flex;flex-direction:column;align-items:center;gap:5px;
-  transition:transform .08s,filter .15s}
-.mic small{font-family:var(--body);font-weight:500;font-size:12px;letter-spacing:0;opacity:.75}
-.mic.m{background:var(--me)} .mic.t{background:var(--them)}
-.mic:active{transform:scale(.97)}
-.mic[aria-pressed="true"]{filter:brightness(1.25);box-shadow:0 0 0 3px var(--fg) inset}
-.mic:disabled{opacity:.4}
+/* ---- controls ---- */
+.ctl{flex:none;padding:9px 12px 12px;display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line)}
+.big{border:0;border-radius:16px;padding:19px;font-family:var(--display);font-weight:800;font-size:19px;
+  color:#0E1116;background:var(--ok);display:flex;align-items:center;justify-content:center;gap:9px;transition:transform .08s}
+.big:active{transform:scale(.98)}
+.big.stop{background:var(--stop);color:#fff}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.pair button{border:0;border-radius:14px;padding:14px 8px;font-family:var(--display);font-weight:800;font-size:15px;
+  color:#0E1116;display:flex;flex-direction:column;align-items:center;gap:3px}
+.pair small{font-family:var(--body);font-weight:500;font-size:11px;opacity:.75}
+#btnMe{background:var(--me)} #btnThem{background:var(--them)}
+.pair button[aria-pressed="true"]{box-shadow:0 0 0 3px var(--fg) inset}
+.pair button:disabled{opacity:.45}
+.phr{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none}
+.phr::-webkit-scrollbar{display:none}
+.phr button{flex:none;background:var(--panel);border:1px solid var(--line);border-radius:999px;
+  padding:9px 13px;font-size:14px;white-space:nowrap}
+.phr button.first{border-color:var(--ok);color:var(--ok)}
+.err{font-size:13px;color:var(--err);padding:0 2px}
 
-/* setup / settings sheet */
-.sheet{position:fixed;inset:0;background:var(--bg);z-index:20;overflow-y:auto;
-  padding:calc(20px + env(safe-area-inset-top,0px)) 18px calc(28px + env(safe-area-inset-bottom,0px))}
-.sheet[hidden]{display:none}
-.sheet .inner{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
-.sheet h1{font-family:var(--display);font-weight:800;font-size:22px;margin:0}
-.sheet h3{font-size:13px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:6px 0 -8px;font-weight:600}
-.sheet p{margin:0;font-size:15px;color:var(--muted)}
-.sheet ol{margin:0;padding-left:20px;font-size:15px;color:var(--muted);display:flex;flex-direction:column;gap:6px}
+/* ---- sheets ---- */
+.sheet{position:fixed;inset:0;background:var(--bg);z-index:30;overflow-y:auto;
+  padding:calc(18px + env(safe-area-inset-top,0px)) 18px calc(26px + env(safe-area-inset-bottom,0px))}
+.sheet .in{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.sheet h1{font-family:var(--display);font-weight:800;font-size:21px;margin:0}
+.sheet h3{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:4px 0 -8px;font-weight:600}
+.sheet p{margin:0;font-size:14px;color:var(--muted)}
 .sheet a{color:var(--them)}
-input[type=password],input[type=text],textarea,select{width:100%;background:var(--panel);border:1px solid var(--line);
-  color:var(--fg);border-radius:11px;padding:13px;font:400 16px var(--body)}
-textarea{min-height:170px;resize:vertical;line-height:1.45}
+input,textarea,select{width:100%;background:var(--panel);border:1px solid var(--line);color:var(--fg);
+  border-radius:11px;padding:13px;font:400 16px var(--body);user-select:text}
+textarea{min-height:150px;resize:vertical;line-height:1.45}
 .save{background:var(--ok);color:#06240F;border:0;border-radius:12px;padding:15px;font:800 17px var(--display)}
 .ghost{background:none;border:1px solid var(--line);color:var(--muted);border-radius:12px;padding:13px;font:500 15px var(--body)}
-.warn{background:#2A1C14;border:1px solid #4A2F1E;border-radius:11px;padding:12px;font-size:14px;color:#F0C9A8}
+.warn{background:#2A1C14;border:1px solid #4A2F1E;border-radius:11px;padding:11px;font-size:13px;color:#F0C9A8}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--panel);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:7px 13px;font-size:14px}
+.chip[aria-pressed="true"]{background:var(--fg);color:var(--bg);border-color:var(--fg)}
+label.cb{display:flex;gap:10px;align-items:center;font-size:15px}
+label.cb input{width:22px;height:22px;accent-color:var(--ok);flex:none}
 </style>
 </head>
 <body>
 
 <div id="app">
-  <div class="bar">
-    <div class="brand">Dolmet<i>scher</i></div>
-    <button class="tb" id="autoBtn" type="button" aria-pressed="false">Авто-разговор</button>
+  <div class="strip">
+    <div class="state" id="state"><span class="dot"></span><b id="stateTxt">Готов</b></div>
+    <button class="tb" id="viewBtn" type="button">Стол</button>
+    <button class="tb" id="flipBtn" type="button" hidden aria-pressed="true">⇅</button>
     <button class="tb" id="setBtn" type="button" aria-label="Настройки">⚙</button>
   </div>
 
-  <div class="chips" id="chips" role="group" aria-label="Ситуация"></div>
+  <div id="chat"></div>
 
-  <div class="stage">
-    <div class="who" id="who"><span class="dot"></span><span id="whoTxt">Готов</span></div>
-    <div class="heard" id="heard">Нажмите большую кнопку снизу и говорите.</div>
-    <p class="big" id="big"></p>
-    <div class="acts">
-      <button type="button" id="speakBtn">🔊 Повторить вслух</button>
-      <button type="button" id="copyBtn">Копировать</button>
-      <button type="button" id="clearBtn">Новый разговор</button>
-    </div>
-    <div class="note" id="note"></div>
-
-    <div class="hist" id="histBox" hidden>
-      <h2>Разговор</h2>
-      <div id="hist"></div>
-    </div>
+  <div id="table" hidden>
+    <div class="pane flip" id="paneThem"><div class="tag">Für Sie · auf Deutsch</div><div class="txt" id="txtThem">—</div></div>
+    <div class="pane" id="paneMe"><div class="tag">Вам · по-русски</div><div class="txt" id="txtMe">—</div></div>
   </div>
 
-  <div class="mics">
-    <button class="mic m" id="micRu" type="button" aria-pressed="false">🎤 Я<small>по-русски</small></button>
-    <button class="mic t" id="micDe" type="button" aria-pressed="false">🎤 Er/Sie<small>auf Deutsch</small></button>
+  <div class="ctl">
+    <button class="big" id="autoBtn" type="button">▶ Начать разговор</button>
+    <div class="pair">
+      <button id="btnMe" type="button" aria-pressed="false">🎤 Я<small>по-русски</small></button>
+      <button id="btnThem" type="button" aria-pressed="false">🎤 Er/Sie<small>auf Deutsch</small></button>
+    </div>
+    <div class="phr" id="phr"></div>
+    <div class="err" id="err"></div>
   </div>
 </div>
 
 <div class="sheet" id="sheet" hidden>
-  <div class="inner">
+  <div class="in">
     <h1>Настройки</h1>
-
+    <h3>Ситуация</h3>
+    <div class="chips" id="chips"></div>
     <h3>Ключ Claude API</h3>
     <input type="password" id="key" placeholder="sk-ant-..." autocomplete="off" spellcheck="false">
-    <p>Ключ хранится только в этом браузере и уходит напрямую в Anthropic. Получить: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> → Create Key. Там же поставьте лимит расходов.</p>
-
+    <p>Хранится только в этом телефоне. Получить: <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> → Create Key. Там же поставьте лимит расходов.</p>
     <h3>Модель</h3>
     <select id="model">
       <option value="claude-haiku-4-5-20251001">Быстрая (Haiku) — для разговора</option>
-      <option value="claude-sonnet-5-5">Точная (Sonnet) — для писем и документов</option>
+      <option value="claude-sonnet-5-5">Точная (Sonnet) — для писем и бумаг</option>
     </select>
-
     <h3>Обо мне</h3>
-    <textarea id="profile" placeholder="Кто вы, семья, с кем общаетесь, имена людей..."></textarea>
-    <p>Переводчик читает это перед каждым переводом: правильно пишет имена и подбирает тон.</p>
-
-    <h3>Голос</h3>
-    <label style="display:flex;gap:10px;align-items:center;font-size:15px">
-      <input type="checkbox" id="tts" style="width:22px;height:22px;accent-color:var(--ok)"> Произносить перевод вслух
-    </label>
-
-    <div class="warn">Не открывайте эту страницу на чужом телефоне: ключ останется в его браузере.</div>
-
+    <textarea id="profile"></textarea>
+    <p>Переводчик читает это перед каждой фразой: правильно пишет имена и держит нужный тон.</p>
+    <h3>Поведение</h3>
+    <label class="cb"><input type="checkbox" id="tts"> Произносить перевод вслух</label>
+    <label class="cb"><input type="checkbox" id="beep"> Сигнал «говорите» перед записью</label>
+    <label class="cb"><input type="checkbox" id="notice"> Предупреждать собеседника при старте</label>
+    <p>Предупреждение — ваша юридическая защита: в Германии скрытая запись чужой речи запрещена (§ 201 StGB), а открытый перевод — нет.</p>
+    <div class="warn">Разговор хранится только в памяти вкладки и исчезает при закрытии. Аудио не сохраняется нигде.</div>
     <button class="save" id="saveBtn" type="button">Сохранить</button>
+    <button class="ghost" id="copyAll" type="button">Скопировать весь разговор</button>
+    <button class="ghost" id="clearAll" type="button">Очистить разговор</button>
     <button class="ghost" id="forgetBtn" type="button">Удалить ключ из этого браузера</button>
   </div>
 </div>
@@ -162,329 +166,327 @@ textarea{min-height:170px;resize:vertical;line-height:1.45}
 <script>
 (function(){
 "use strict";
-var $ = function(id){ return document.getElementById(id); };
+var $=function(i){return document.getElementById(i)};
 
-/* ---------- состояние ---------- */
-var SIT = [["Alltag","Повседневное"],["Arzt","Врач"],["Schule","Школа"],["Fußball","Футбол"],
-           ["Jobcenter","Jobcenter"],["Behörde","Ведомство"],["Wohnung","Жильё"],["Einkauf","Магазин"]];
-var DEFAULT_PROFILE =
+var SIT=[["Alltag","Повседневное"],["Arzt","Врач"],["Schule","Школа"],["Fußball","Футбол"],
+         ["Jobcenter","Jobcenter"],["Behörde","Ведомство"],["Wohnung","Жильё"],["Einkauf","Магазин"]];
+
+var NOTICE_DE="Ich spreche nur wenig Deutsch. Ich benutze eine Übersetzer-App auf dem Handy. Sie übersetzt unser Gespräch live, es wird nichts aufgezeichnet. Ist das für Sie in Ordnung?";
+var NOTICE_RU="Я плохо говорю по-немецки и пользуюсь переводчиком. Он переводит разговор вживую, запись не ведётся. Вы не против?";
+
+var PHRASES=[
+ ["⚠ Предупредить", NOTICE_DE],
+ ["Повторите","Können Sie das bitte wiederholen?"],
+ ["Помедленнее","Könnten Sie bitte etwas langsamer sprechen?"],
+ ["Не понял","Das habe ich leider nicht verstanden."],
+ ["Напишите","Können Sie mir das bitte aufschreiben?"],
+ ["Момент","Einen Moment bitte."],
+ ["Спасибо","Vielen Dank!"]
+];
+
+var DEF_PROFILE=
 "Я живу в Германии, немецкий только учу.\n"+
 "Общаюсь: школа и учителя, футбольный тренер, Jobcenter, Ausländerbehörde, врачи, страховая, арендодатель.\n"+
 "Стиль: вежливо на Sie, просто и коротко, без канцелярита. Если со мной на du — тоже на du.\n"+
-"Имена, которые часто встречаются: (допишите сюда имена детей, врача, тренера, учителей)";
+"Имена: (впишите имена детей, врача, тренера, учителей)";
 
-var S = {
-  key:  get("key",""),
-  model:get("model","claude-haiku-4-5-20251001"),
-  prof: get("prof",DEFAULT_PROFILE),
-  tts:  get("tts","1")==="1",
-  sit:  get("sit","Alltag"),
-  auto: false
-};
-var turns = [];          /* {dir, src, out} */
-var listening = null;    /* 'ru' | 'de' | null */
-var busy = false;
-var rec = null, recActive = false, wantLang = null, finalText = "";
+function g(k,d){try{var v=localStorage.getItem("dlm."+k);return v===null?d:v}catch(e){return d}}
+function s_(k,v){try{localStorage.setItem("dlm."+k,v)}catch(e){}}
 
-function get(k,d){ try{ var v=localStorage.getItem("dlm."+k); return v===null?d:v; }catch(e){ return d; } }
-function set(k,v){ try{ localStorage.setItem("dlm."+k,v); }catch(e){} }
+var S={key:g("key",""),model:g("model","claude-haiku-4-5-20251001"),prof:g("prof",DEF_PROFILE),
+       tts:g("tts","1")==="1",beep:g("beep","1")==="1",notice:g("notice","1")==="1",
+       sit:g("sit","Alltag"),flip:g("flip","1")==="1",view:g("view","chat")};
 
-/* ---------- ситуации ---------- */
-SIT.forEach(function(p){
-  var b=document.createElement("button");
-  b.type="button"; b.className="chip"; b.textContent=p[1]; b.dataset.k=p[0];
-  b.setAttribute("aria-pressed", String(p[0]===S.sit));
-  b.onclick=function(){
-    S.sit=p[0]; set("sit",p[0]);
-    Array.prototype.forEach.call($("chips").children,function(c){
-      c.setAttribute("aria-pressed", String(c.dataset.k===p[0]));
-    });
-  };
-  $("chips").appendChild(b);
-});
+var turns=[],loop=false,busy=false,empties=0,noticed=false;
+var rec=null,recOn=false,curLang=null,finalTxt="",pending=null,wake=null;
 
-/* ---------- экран ---------- */
-function status(txt, live){
-  $("whoTxt").textContent = txt;
-  $("who").classList.toggle("live", !!live);
+/* ---------------- отрисовка ---------------- */
+function bubble(cls,main,orig){
+  var d=document.createElement("div"); d.className="bub "+cls;
+  var t=document.createElement("div"); t.className="t"; t.textContent=main; d.appendChild(t);
+  if(orig){ var o=document.createElement("div"); o.className="o"; o.textContent=orig; d.appendChild(o); }
+  return d;
 }
-function note(t){ $("note").textContent = t || ""; }
-function showBig(text, dir){
-  var el=$("big");
-  el.textContent = text;
-  el.className = "big " + (dir==="ru-de" ? "me" : "them");
-}
-function renderHist(){
-  var box=$("hist");
-  $("histBox").hidden = turns.length===0;
-  box.innerHTML="";
-  turns.slice().reverse().forEach(function(t){
-    var d=document.createElement("div");
-    d.className = "row " + (t.dir==="ru-de"?"me":"them");
-    var a=document.createElement("div"); a.className="a"; a.textContent=t.out;
-    var b=document.createElement("div"); b.className="b"; b.textContent=t.src;
-    d.appendChild(a); d.appendChild(b); box.appendChild(d);
+function scrollDown(){ var c=$("chat"); c.scrollTop=c.scrollHeight; }
+
+function render(){
+  var c=$("chat"); c.innerHTML="";
+  if(!turns.length && !pending){
+    var h=document.createElement("div"); h.className="hint";
+    h.textContent="Нажмите «Начать разговор». Скажите фразу по-русски — телефон произнесёт её по-немецки и сам начнёт слушать ответ.";
+    c.appendChild(h);
+  }
+  turns.forEach(function(t){
+    if(t.dir==="sys"){ c.appendChild(bubble("sys",t.out,"")); return; }
+    c.appendChild(bubble(t.dir==="ru-de"?"me":"them", t.out, t.src));
   });
+  if(pending) c.appendChild(bubble((pending.side==="me"?"me":"them")+" pend", pending.text||"…",""));
+  scrollDown();
+  var last=null;
+  for(var i=turns.length-1;i>=0;i--) if(turns[i].dir!=="sys"){ last=turns[i]; break; }
+  $("txtThem").textContent = last ? (last.dir==="ru-de"?last.out:last.src) : "—";
+  $("txtMe").textContent   = last ? (last.dir==="ru-de"?last.src:last.out) : "—";
+}
+function setState(t,m){ $("stateTxt").textContent=t; $("state").className="state"+(m?" "+m:""); }
+function err(t){ $("err").textContent=t||""; }
+function applyView(){
+  var chat = S.view==="chat";
+  $("chat").hidden=!chat; $("table").hidden=chat;
+  $("viewBtn").textContent = chat ? "Стол" : "Чат";
+  $("flipBtn").hidden = chat;
+  $("paneThem").classList.toggle("flip",S.flip);
+  $("flipBtn").setAttribute("aria-pressed",String(S.flip));
 }
 
-/* ---------- озвучка ---------- */
-var voices=[];
-function loadVoices(){ try{ voices=speechSynthesis.getVoices()||[]; }catch(e){ voices=[]; } }
-if("speechSynthesis" in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+/* ---------------- экран / сигнал ---------------- */
+function keepAwake(on){
+  try{
+    if(on){ if(navigator.wakeLock&&!wake){ navigator.wakeLock.request("screen").then(function(w){
+        wake=w; w.addEventListener("release",function(){wake=null}); }).catch(function(){}); } }
+    else if(wake){ wake.release().catch(function(){}); wake=null; }
+  }catch(e){}
+}
+document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible"&&loop) keepAwake(true); });
 
-function speak(text, lang, done){
-  if(!S.tts || !("speechSynthesis" in window) || !text){ if(done) done(); return; }
+var ac=null;
+function beep(lang){
+  if(!S.beep) return;
+  try{
+    if(!ac) ac=new (window.AudioContext||window.webkitAudioContext)();
+    if(ac.state==="suspended") ac.resume();
+    var o=ac.createOscillator(),gn=ac.createGain();
+    o.type="sine"; o.frequency.value = lang==="ru"?880:520;
+    gn.gain.setValueAtTime(0.0001,ac.currentTime);
+    gn.gain.exponentialRampToValueAtTime(0.22,ac.currentTime+0.02);
+    gn.gain.exponentialRampToValueAtTime(0.0001,ac.currentTime+0.18);
+    o.connect(gn); gn.connect(ac.destination); o.start(); o.stop(ac.currentTime+0.2);
+  }catch(e){}
+}
+
+/* ---------------- голос ---------------- */
+var voices=[];
+function loadVoices(){ try{voices=speechSynthesis.getVoices()||[]}catch(e){voices=[]} }
+if("speechSynthesis" in window){ loadVoices(); speechSynthesis.onvoiceschanged=loadVoices; }
+function speak(text,lang,done){
+  if(!S.tts||!("speechSynthesis" in window)||!text){ if(done)done(); return; }
   try{
     speechSynthesis.cancel();
-    var u=new SpeechSynthesisUtterance(text);
-    u.lang=lang; u.rate=0.98;
-    var v=null, i;
-    for(i=0;i<voices.length;i++){
-      if(voices[i].lang && voices[i].lang.toLowerCase().replace("_","-").indexOf(lang.slice(0,2))===0){ v=voices[i]; break; }
+    var u=new SpeechSynthesisUtterance(text); u.lang=lang; u.rate=0.98;
+    for(var i=0;i<voices.length;i++){
+      var L=(voices[i].lang||"").toLowerCase().replace("_","-");
+      if(L.indexOf(lang.slice(0,2))===0){ u.voice=voices[i]; break; }
     }
-    if(v) u.voice=v;
-    var fired=false;
-    u.onend=function(){ if(!fired){ fired=true; if(done) done(); } };
-    u.onerror=function(){ if(!fired){ fired=true; if(done) done(); } };
-    speechSynthesis.speak(u);
-    setTimeout(function(){ if(!fired){ fired=true; if(done) done(); } }, Math.min(12000, 1800+text.length*90));
-  }catch(e){ if(done) done(); }
+    var f=false,fin=function(){ if(!f){f=true; if(done)done();} };
+    u.onend=fin; u.onerror=fin; speechSynthesis.speak(u);
+    setTimeout(fin, Math.min(16000, 2000+text.length*95));
+  }catch(e){ if(done)done(); }
 }
+function sayNow(text,lang,done){ var x=S.tts; S.tts=true; speak(text,lang,function(){ S.tts=x; if(done)done(); }); }
 
-/* ---------- распознавание речи ---------- */
-var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+/* ---------------- слух ---------------- */
+var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+function marks(){
+  $("btnMe").setAttribute("aria-pressed",String(recOn&&curLang==="ru"));
+  $("btnThem").setAttribute("aria-pressed",String(recOn&&curLang==="de"));
+  $("btnMe").disabled=busy; $("btnThem").disabled=busy;
+  $("autoBtn").textContent = loop?"■ Стоп":"▶ Начать разговор";
+  $("autoBtn").classList.toggle("stop",loop);
+}
+function hardStop(){ if(rec&&recOn){try{rec.abort()}catch(e){}} recOn=false; curLang=null; pending=null; marks(); }
 
-function startListening(lang){
-  if(!SR){ note("Этот браузер не умеет слушать речь. Откройте страницу в Chrome."); return; }
+function listen(lang){
+  if(!SR){ err("Этот браузер не умеет слушать речь. Откройте страницу в Chrome."); return; }
   if(busy) return;
-  stopListening();
-  try{ speechSynthesis.cancel(); }catch(e){}
+  if(rec&&recOn){try{rec.abort()}catch(e){}}
+  recOn=false; curLang=lang; finalTxt="";
+  rec=new SR(); rec.lang = lang==="ru"?"ru-RU":"de-DE";
+  rec.interimResults=true; rec.continuous=false; rec.maxAlternatives=1;
 
-  wantLang = lang;
-  finalText = "";
-  rec = new SR();
-  rec.lang = (lang==="ru" ? "ru-RU" : "de-DE");
-  rec.interimResults = true;
-  rec.continuous = false;
-  rec.maxAlternatives = 1;
-
-  rec.onstart = function(){
-    recActive = true;
-    listening = lang;
-    setMicState();
-    status(lang==="ru" ? "Слушаю вас" : "Höre zu", true);
-    $("heard").textContent = "";
-    note("");
+  rec.onstart=function(){
+    recOn=true; marks(); err("");
+    setState(lang==="ru"?"Слушаю вас":"Höre zu","live");
+    pending={side:lang==="ru"?"me":"them",text:""}; render();
   };
-  rec.onresult = function(e){
-    var fin="", itm="";
+  rec.onresult=function(e){
+    var f="",it="";
     for(var i=e.resultIndex;i<e.results.length;i++){
-      var r=e.results[i];
-      if(r.isFinal) fin += r[0].transcript; else itm += r[0].transcript;
+      var r=e.results[i]; if(r.isFinal) f+=r[0].transcript; else it+=r[0].transcript;
     }
-    if(fin) finalText += fin;
-    $("heard").innerHTML="";
-    $("heard").appendChild(document.createTextNode(finalText));
-    if(itm){
-      var s=document.createElement("span"); s.className="interim"; s.textContent=" "+itm;
-      $("heard").appendChild(s);
-    }
+    if(f) finalTxt+=f;
+    if(pending){ pending.text=(finalTxt+" "+it).trim(); render(); }
   };
-  rec.onerror = function(e){
-    recActive=false;
-    var m={
-      "not-allowed":"Доступ к микрофону запрещён. Нажмите 🔒 в адресной строке Chrome и разрешите «Микрофон».",
-      "service-not-allowed":"Доступ к микрофону запрещён в настройках браузера.",
-      "no-speech":"",
-      "aborted":"",
-      "audio-capture":"Микрофон не найден.",
-      "network":"Нет интернета для распознавания речи."
-    };
-    var t = m.hasOwnProperty(e.error) ? m[e.error] : ("Ошибка распознавания: "+e.error);
-    if(t) note(t);
+  rec.onerror=function(e){
+    recOn=false;
+    var M={"not-allowed":"Микрофон запрещён. Нажмите 🔒 слева в адресной строке Chrome и разрешите «Микрофон».",
+           "service-not-allowed":"Микрофон запрещён в настройках браузера.",
+           "audio-capture":"Микрофон не найден.","network":"Нет интернета для распознавания речи.",
+           "no-speech":"","aborted":""};
+    var t=M.hasOwnProperty(e.error)?M[e.error]:("Ошибка распознавания: "+e.error);
+    if(t){ err(t); loop=false; marks(); keepAwake(false); }
   };
-  rec.onend = function(){
-    recActive=false; listening=null; setMicState();
-    var text = finalText.trim();
-    if(text){ translate(text, wantLang); }
-    else { status("Готов"); }
+  rec.onend=function(){
+    recOn=false; marks();
+    var txt=finalTxt.trim();
+    if(txt){ empties=0; pending=null; translate(txt,curLang); return; }
+    pending=null; render();
+    if(loop){
+      empties++;
+      if(empties>=8){ loop=false; marks(); keepAwake(false); setState("Пауза. Нажмите «Начать»"); return; }
+      setTimeout(function(){ if(loop) listen(curLang); },220);
+    } else setState("Готов");
   };
-
-  try{ rec.start(); }
-  catch(e){ note("Не удалось включить микрофон. Попробуйте ещё раз."); }
+  beep(lang);
+  setTimeout(function(){ try{rec.start()}catch(e){ err("Не удалось включить микрофон."); } }, S.beep?230:0);
 }
 
-function stopListening(){
-  if(rec && recActive){ try{ rec.stop(); }catch(e){} }
-  recActive=false; listening=null; setMicState();
+/* ---------------- перевод ---------------- */
+function sysPrompt(dir){
+  var hist=turns.filter(function(t){return t.dir!=="sys"}).slice(-6).map(function(t){
+    return (t.dir==="ru-de"?"Я: ":"Собеседник: ")+t.src+" → "+t.out; }).join("\n")||"(начало)";
+  var task = dir==="ru-de"
+   ? "Переведи МОЮ фразу на немецкий. Телефон произнесёт её вслух собеседнику.\n"+
+     "- Разговорный вежливый немецкий, как сказал бы местный. Короткие простые предложения.\n"+
+     "- Sie, если собеседник сам не перешёл на du. Herr/Frau только с фамилией; по имени — просто «Hallo Sven».\n"+
+     "- Смысл, цифры, время, даты, имена — точно как у меня. Ничего не добавляй.\n"+
+     "- Текст из распознавания речи: молча исправь ошибки распознавания и пунктуацию."
+   : "Переведи фразу СОБЕСЕДНИКА на русский.\n"+
+     "- Точно и близко к оригиналу, простым русским, без смягчений.\n"+
+     "- Цифры, время, даты, суммы, сроки — без изменений.\n"+
+     "- Важный немецкий термин оставь в скобках один раз: Termin, Bescheid, Antrag, Frist, Unterlagen, Überweisung, Krankmeldung, Rezept, Aufenthaltstitel, Elternabend.\n"+
+     "- Текст из распознавания речи: криво распознанное слово угадай по смыслу; если смысл неясен, начни с «(?)».";
+  return "Ты — устный переводчик русский⇄немецкий. Ситуация: "+S.sit+".\n\nО пользователе:\n"+S.prof+
+         "\n\nРазговор до этого:\n"+hist+"\n\n"+task+"\n\nВыведи только перевод — без кавычек и пояснений.";
 }
 
-function setMicState(){
-  $("micRu").setAttribute("aria-pressed", String(listening==="ru"));
-  $("micDe").setAttribute("aria-pressed", String(listening==="de"));
-  $("micRu").disabled = busy;
-  $("micDe").disabled = busy;
-}
-
-/* ---------- перевод ---------- */
-function buildSystem(dir){
-  var sit = "";
-  for(var i=0;i<SIT.length;i++){ if(SIT[i][0]===S.sit) sit=SIT[i][0]; }
-  var hist = turns.slice(-6).map(function(t){
-    return (t.dir==="ru-de" ? "Я: " : "Собеседник: ") + t.src + " → " + t.out;
-  }).join("\n") || "(начало)";
-
-  var task = (dir==="ru-de")
-    ? "Переведи МОЮ фразу на немецкий. Я скажу её вслух собеседнику.\n"+
-      "- Разговорный вежливый немецкий, как сказал бы местный. Короткие простые предложения.\n"+
-      "- Обращение Sie, если собеседник сам не перешёл на du. Herr/Frau только с фамилией; если я называю человека по имени — просто «Hallo Sven».\n"+
-      "- Смысл, цифры, время, даты, имена — точно как у меня. Ничего не добавляй от себя.\n"+
-      "- Текст пришёл из распознавания речи: молча исправь ошибки распознавания и пунктуацию."
-    : "Переведи фразу СОБЕСЕДНИКА на русский.\n"+
-      "- Точно и близко к оригиналу, простым русским, без смягчений.\n"+
-      "- Цифры, время, даты, суммы, сроки — без изменений.\n"+
-      "- Важный немецкий термин оставь в скобках один раз: Termin, Bescheid, Antrag, Frist, Unterlagen, Überweisung, Krankmeldung, Aufenthaltstitel, Elternabend и т.п.\n"+
-      "- Текст из распознавания речи: если слово распознано криво, угадай по смыслу разговора; если смысл неясен, начни перевод с «(?)».";
-
-  return "Ты — устный переводчик русский⇄немецкий. Говорящий сейчас в ситуации: "+sit+".\n\n"+
-         "О пользователе:\n"+S.prof+"\n\n"+
-         "Разговор до этого:\n"+hist+"\n\n"+
-         task+"\n\nВыведи только перевод — без кавычек, пояснений и вариантов.";
-}
-
-function translate(text, lang){
-  if(!S.key){ note("Сначала вставьте ключ API в настройках (⚙)."); openSheet(); return; }
-  var dir = (lang==="ru") ? "ru-de" : "de-ru";
-  busy = true; setMicState();
-  status("Перевожу…", true);
-  showBig("…", dir);
+function translate(text,lang){
+  if(!S.key){ err("Вставьте ключ API в настройках (⚙)."); loop=false; marks(); openSheet(); return; }
+  var dir = lang==="ru"?"ru-de":"de-ru";
+  busy=true; marks(); setState("Перевожу…","wait");
+  pending={side:lang==="ru"?"them":"me",text:"…"}; render();
 
   fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
-    headers:{
-      "content-type":"application/json",
-      "x-api-key":S.key,
-      "anthropic-version":"2023-06-01",
-      "anthropic-dangerous-direct-browser-access":"true"
-    },
-    body:JSON.stringify({
-      model:S.model,
-      max_tokens:700,
-      system:buildSystem(dir),
-      messages:[{role:"user",content:text}]
-    })
+    headers:{"content-type":"application/json","x-api-key":S.key,
+             "anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:S.model,max_tokens:700,system:sysPrompt(dir),messages:[{role:"user",content:text}]})
   })
-  .then(function(r){
-    return r.json().then(function(j){ return {ok:r.ok, status:r.status, body:j}; });
-  })
+  .then(function(r){ return r.json().then(function(j){ return {ok:r.ok,st:r.status,b:j} }) })
   .then(function(res){
     if(!res.ok){
-      var e = (res.body && res.body.error) || {};
-      var msg;
-      if(res.status===401) msg="Ключ API не принят. Проверьте его в настройках.";
-      else if(res.status===429) msg="Слишком часто. Подождите пару секунд.";
-      else if(res.status===400 && /credit|balance/i.test(e.message||"")) msg="На счёте Anthropic закончились средства.";
-      else msg = "Ошибка "+res.status+": "+(e.message||"не удалось перевести");
-      throw new Error(msg);
+      var e=(res.b&&res.b.error)||{},m;
+      if(res.st===401) m="Ключ API не принят. Проверьте его в настройках.";
+      else if(res.st===429) m="Слишком часто. Подождите пару секунд.";
+      else if(/credit|balance/i.test(e.message||"")) m="На счёте Anthropic закончились средства.";
+      else m="Ошибка "+res.st+": "+(e.message||"не удалось перевести");
+      throw new Error(m);
     }
-    var parts = res.body.content || [];
-    var out = "";
-    for(var i=0;i<parts.length;i++){ if(parts[i].type==="text") out += parts[i].text; }
-    out = out.trim();
+    var out="",p=res.b.content||[];
+    for(var i=0;i<p.length;i++) if(p[i].type==="text") out+=p[i].text;
+    out=out.trim();
     if(!out) throw new Error("Пустой ответ, попробуйте ещё раз.");
-
-    showBig(out, dir);
-    turns.push({dir:dir, src:text, out:out});
-    if(turns.length>24) turns.shift();
-    renderHist();
-    status("Готов");
-
-    var outLang = (dir==="ru-de") ? "de-DE" : "ru-RU";
-    busy=false; setMicState();
-    speak(out, outLang, function(){
-      if(S.auto){
-        var next = (dir==="ru-de") ? "de" : "ru";
-        setTimeout(function(){ if(S.auto && !busy) startListening(next); }, 250);
-      }
+    pending=null;
+    turns.push({dir:dir,src:text,out:out});
+    if(turns.length>60) turns.shift();
+    render();
+    busy=false; marks(); setState("Говорю…","wait");
+    speak(out, dir==="ru-de"?"de-DE":"ru-RU", function(){
+      if(loop) setTimeout(function(){ if(loop) listen(dir==="ru-de"?"de":"ru"); },280);
+      else setState("Готов");
     });
   })
-  .catch(function(err){
-    busy=false; setMicState();
-    status("Готов");
-    showBig("", dir);
-    $("big").textContent="";
-    note(err.message && /Failed to fetch|NetworkError/i.test(err.message)
-      ? "Нет связи с Claude. Проверьте интернет."
-      : (err.message||"Не получилось перевести."));
+  .catch(function(e){
+    pending=null; render(); busy=false; marks(); setState("Готов");
+    var m=(e&&e.message)||"";
+    err(/Failed to fetch|NetworkError/i.test(m)?"Нет связи с Claude. Проверьте интернет.":(m||"Не получилось перевести."));
+    if(loop) setTimeout(function(){ if(loop) listen(lang); },900);
   });
 }
 
-/* ---------- кнопки ---------- */
-$("micRu").onclick = function(){ if(listening==="ru") stopListening(); else startListening("ru"); };
-$("micDe").onclick = function(){ if(listening==="de") stopListening(); else startListening("de"); };
-
-$("autoBtn").onclick = function(){
-  S.auto = !S.auto;
-  $("autoBtn").setAttribute("aria-pressed", String(S.auto));
-  note(S.auto ? "" : "");
-  if(!S.auto) stopListening();
-};
-
-$("speakBtn").onclick = function(){
-  var t=$("big").textContent;
-  if(!t) return;
-  var ru = (t.match(/[А-Яа-яЁё]/g)||[]).length > (t.match(/[A-Za-zÄÖÜäöüß]/g)||[]).length;
-  var wasTts = S.tts; S.tts = true;
-  speak(t, ru?"ru-RU":"de-DE", function(){ S.tts = wasTts; });
-};
-$("copyBtn").onclick = function(){
-  var t=$("big").textContent; if(!t) return;
-  if(navigator.clipboard && navigator.clipboard.writeText){
-    navigator.clipboard.writeText(t).then(function(){
-      $("copyBtn").textContent="Скопировано";
-      setTimeout(function(){ $("copyBtn").textContent="Копировать"; },1400);
-    }).catch(function(){ selectBig(); });
-  } else selectBig();
-};
-function selectBig(){
-  try{
-    var r=document.createRange(); r.selectNodeContents($("big"));
-    var s=window.getSelection(); s.removeAllRanges(); s.addRange(r);
-  }catch(e){}
+/* ---------------- фразы ---------------- */
+function sayPhrase(ru,de,then){
+  var wasLoop=loop; loop=false; hardStop(); marks();
+  turns.push({dir:"ru-de",src:ru,out:de}); render();
+  setState("Говорю…","wait");
+  sayNow(de,"de-DE",function(){
+    if(wasLoop||then){ loop=true; marks(); keepAwake(true); setTimeout(function(){ if(loop) listen("de"); },280); }
+    else setState("Готов");
+  });
 }
-$("clearBtn").onclick = function(){
-  turns=[]; renderHist(); $("big").textContent=""; $("heard").textContent="Нажмите большую кнопку снизу и говорите.";
-  note(""); status("Готов");
-};
+PHRASES.forEach(function(p,i){
+  var b=document.createElement("button"); b.type="button"; b.textContent=p[0];
+  if(i===0) b.className="first";
+  b.onclick=function(){ sayPhrase(i===0?NOTICE_RU:p[0], p[1], false); };
+  $("phr").appendChild(b);
+});
 
-/* ---------- настройки ---------- */
+/* ---------------- кнопки ---------------- */
+$("autoBtn").onclick=function(){
+  if(loop){ loop=false; hardStop(); marks(); keepAwake(false); setState("Готов"); try{speechSynthesis.cancel()}catch(e){} return; }
+  if(!S.key){ err("Сначала вставьте ключ API (⚙)."); openSheet(); return; }
+  loop=true; empties=0; marks(); keepAwake(true);
+  if(S.notice && !noticed){
+    noticed=true;
+    turns.push({dir:"sys",src:"",out:"Собеседник предупреждён, что идёт перевод"});
+    turns.push({dir:"ru-de",src:NOTICE_RU,out:NOTICE_DE}); render();
+    setState("Предупреждаю собеседника…","wait");
+    sayNow(NOTICE_DE,"de-DE",function(){ if(loop) listen("ru"); });
+  } else listen("ru");
+};
+$("btnMe").onclick=function(){ loop=false; marks(); keepAwake(false); if(recOn&&curLang==="ru") hardStop(); else listen("ru"); };
+$("btnThem").onclick=function(){ loop=false; marks(); keepAwake(false); if(recOn&&curLang==="de") hardStop(); else listen("de"); };
+$("viewBtn").onclick=function(){ S.view = S.view==="chat"?"table":"chat"; s_("view",S.view); applyView(); render(); };
+$("flipBtn").onclick=function(){ S.flip=!S.flip; s_("flip",S.flip?"1":"0"); applyView(); };
+$("chat").addEventListener("click",function(e){
+  var b=e.target.closest? e.target.closest(".bub"):null;
+  if(!b||b.classList.contains("sys")) return;
+  var t=b.querySelector(".t").textContent;
+  sayNow(t, b.classList.contains("me")?"de-DE":"ru-RU");
+});
+$("paneThem").onclick=function(){ var t=$("txtThem").textContent; if(t&&t!=="—") sayNow(t,"de-DE"); };
+$("paneMe").onclick=function(){ var t=$("txtMe").textContent; if(t&&t!=="—") sayNow(t,"ru-RU"); };
+
+/* ---------------- настройки ---------------- */
 function openSheet(){
-  $("key").value = S.key;
-  $("model").value = S.model;
-  $("profile").value = S.prof;
-  $("tts").checked = S.tts;
-  $("sheet").hidden = false;
+  $("key").value=S.key; $("model").value=S.model; $("profile").value=S.prof;
+  $("tts").checked=S.tts; $("beep").checked=S.beep; $("notice").checked=S.notice;
+  $("sheet").hidden=false;
 }
-$("setBtn").onclick = openSheet;
-$("saveBtn").onclick = function(){
-  S.key = $("key").value.trim();
-  S.model = $("model").value;
-  S.prof = $("profile").value;
-  S.tts = $("tts").checked;
-  set("key",S.key); set("model",S.model); set("prof",S.prof); set("tts",S.tts?"1":"0");
-  $("sheet").hidden = true;
-  note(S.key ? "" : "Без ключа API перевод не работает.");
+$("setBtn").onclick=function(){ loop=false; hardStop(); marks(); keepAwake(false); openSheet(); };
+$("saveBtn").onclick=function(){
+  S.key=$("key").value.trim(); S.model=$("model").value; S.prof=$("profile").value;
+  S.tts=$("tts").checked; S.beep=$("beep").checked; S.notice=$("notice").checked;
+  s_("key",S.key); s_("model",S.model); s_("prof",S.prof);
+  s_("tts",S.tts?"1":"0"); s_("beep",S.beep?"1":"0"); s_("notice",S.notice?"1":"0");
+  $("sheet").hidden=true; err(S.key?"":"Без ключа API перевод не работает.");
 };
-$("forgetBtn").onclick = function(){
-  S.key=""; set("key",""); $("key").value="";
-  note("Ключ удалён из этого браузера.");
+$("forgetBtn").onclick=function(){ S.key=""; s_("key",""); $("key").value=""; err("Ключ удалён."); };
+$("clearAll").onclick=function(){ turns=[]; noticed=false; pending=null; render(); $("sheet").hidden=true; };
+$("copyAll").onclick=function(){
+  var t=turns.filter(function(x){return x.dir!=="sys"})
+    .map(function(x){ return (x.dir==="ru-de"?"Я: ":"Собеседник: ")+x.src+"\n→ "+x.out }).join("\n\n");
+  if(!t) return;
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(t).then(function(){
+      $("copyAll").textContent="Скопировано";
+      setTimeout(function(){ $("copyAll").textContent="Скопировать весь разговор" },1400);
+    }).catch(function(){});
+  }
 };
+SIT.forEach(function(p){
+  var b=document.createElement("button"); b.type="button"; b.className="chip";
+  b.textContent=p[1]; b.dataset.k=p[0];
+  b.setAttribute("aria-pressed",String(p[0]===S.sit));
+  b.onclick=function(){ S.sit=p[0]; s_("sit",p[0]);
+    Array.prototype.forEach.call($("chips").children,function(c){
+      c.setAttribute("aria-pressed",String(c.dataset.k===p[0])); }); };
+  $("chips").appendChild(b);
+});
 
-/* ---------- старт ---------- */
-renderHist();
-if(!SR) note("Этот браузер не умеет слушать речь. Откройте страницу в Chrome.");
-if(!S.key){ openSheet(); }
-window.addEventListener("beforeunload", function(){ try{ speechSynthesis.cancel(); }catch(e){} });
+/* ---------------- старт ---------------- */
+applyView(); marks(); render();
+if(!SR) err("Этот браузер не умеет слушать речь. Откройте страницу в Chrome.");
+if(!S.key) openSheet();
+window.addEventListener("beforeunload",function(){ try{speechSynthesis.cancel()}catch(e){} keepAwake(false); });
 })();
 </script>
 </body>
