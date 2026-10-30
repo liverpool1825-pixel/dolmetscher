@@ -207,7 +207,7 @@ label.cb input{width:22px;height:22px;accent-color:var(--ok);flex:none}
 "use strict";
 var $=function(i){return document.getElementById(i)};
 
-var VER="v8 · 30.10 18:05";
+var VER="v9 · 30.10 18:30";
 var SIT=[["Alltag","Повседневное"],["Arzt","Врач"],["Schule","Школа"],["Fußball","Футбол"],
          ["Jobcenter","Jobcenter"],["Behörde","Ведомство"],["Wohnung","Жильё"],["Einkauf","Магазин"]];
 var NOTICE_DE="Ich spreche nur wenig Deutsch. Ich benutze eine Übersetzer-App auf dem Handy. Sie übersetzt unser Gespräch live, es wird nichts aufgezeichnet. Ist das für Sie in Ordnung?";
@@ -325,6 +325,51 @@ function speak(text,lang,done){
 }
 function sayNow(t,l,d){var x=S.tts;S.tts=true;speak(t,l,function(){S.tts=x;if(d)d();});}
 
+
+/* ---------- склейка кусков распознавания ----------
+   Android присылает НАРАСТАЮЩИЕ куски: «А», «А Б», «А Б В».
+   Наивное сложение давало «А А Б А Б В». Склеиваем по словам. */
+function wds(t){ return String(t||"").trim().split(/\s+/).filter(Boolean); }
+function nw(w){ return String(w).toLowerCase().replace(/[^0-9a-zа-яё]/gi,""); }
+function startsW(a,b){                         // a начинается со слов b
+  if(b.length>a.length) return false;
+  for(var i=0;i<b.length;i++) if(nw(a[i])!==nw(b[i])) return false;
+  return true;
+}
+function tailOv(a,b){                          // хвост a, совпадающий с началом b
+  var max=Math.min(a.length,b.length);
+  for(var n=max;n>0;n--){
+    var ok=true;
+    for(var i=0;i<n;i++) if(nw(a[a.length-n+i])!==nw(b[i])){ ok=false; break; }
+    if(ok) return n;
+  }
+  return 0;
+}
+function mergeW(acc,txt){
+  var b=wds(txt); if(!b.length) return acc;
+  if(!acc.length) return b;
+  if(startsW(b,acc)) return b;                 // новый кусок продолжает прежний
+  if(startsW(acc,b)) return acc;               // укороченный повтор
+  var ov=tailOv(acc,b);
+  return acc.concat(b.slice(ov));
+}
+function collapseW(w){                         // страховка: убрать повтор блока слов
+  var out=[];
+  for(var i=0;i<w.length;i++){
+    out.push(w[i]);
+    var lim=Math.min(10,Math.floor(out.length/2));
+    for(var n=lim;n>=1;n--){
+      if(n===1 && nw(out[out.length-1]).length<8) continue;  // «очень очень» — живая речь, не трогаем
+      var same=true;
+      for(var j=0;j<n;j++){
+        if(nw(out[out.length-n+j])!==nw(out[out.length-2*n+j])){ same=false; break; }
+      }
+      if(same){ out.length-=n; break; }
+    }
+  }
+  return out;
+}
+
 /* ---------- слух ---------- */
 var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 function marks(){
@@ -359,21 +404,33 @@ function listen(lang){
     if(S.longm) armSilence(Math.max(15000,S.pause*3));
   };
   rec.onresult=function(e){
-    // Android присылает весь список заново, поэтому каждый раз
-    // собираем фразу с нуля, а не доклеиваем к прошлой.
-    var fin=[],itm=[],aa=[];
+    var acc=[],itm=[],fins=[];
     for(var i=0;i<e.results.length;i++){
       var r=e.results[i]; if(!r||!r[0]) continue;
-      var txt=(r[0].transcript||"").trim(); if(!txt) continue;
+      var t=(r[0].transcript||"").trim(); if(!t) continue;
       if(r.isFinal){
-        if(fin.length&&fin[fin.length-1]===txt) continue;   // дубль того же куска
-        fin.push(txt);
-        var a=[]; for(var k=0;k<r.length&&k<5;k++) if(r[k]&&r[k].transcript) a.push(r[k].transcript);
-        aa.push(a);
-      } else if(!itm.length||itm[itm.length-1]!==txt) itm.push(txt);
+        acc=mergeW(acc,t);
+        var a=[];
+        for(var k=0;k<r.length&&k<5;k++) if(r[k]&&r[k].transcript) a.push(r[k].transcript);
+        fins.push({t:t,a:a});
+      } else itm=mergeW(itm,t);
     }
-    finalTxt=fin.join(" "); alts=aa;
-    var shown=(finalTxt+" "+itm.join(" ")).trim();
+    acc=collapseW(acc);
+    finalTxt=acc.join(" ");
+    // варианты берём у тех кусков, что не являются началом более длинного:
+    // так отсеиваются нарастающие дубли, но остаются настоящие части фразы
+    var keep=[];
+    for(var x=0;x<fins.length;x++){
+      var pre=false, A=wds(fins[x].t);
+      for(var y=0;y<fins.length&&!pre;y++){
+        if(y===x) continue;
+        var B=wds(fins[y].t);
+        if(B.length>A.length&&startsW(B,A)) pre=true;
+      }
+      if(!pre) keep.push(fins[x].a);
+    }
+    alts=keep.slice(0,4);
+    var shown=collapseW(itm.length?mergeW(acc.slice(),itm.join(" ")):acc).join(" ");
     if(shown.length>600) shown="…"+shown.slice(-600);
     $("heard").textContent=shown;
     if(pending){ pending.text=shown; render(); }
